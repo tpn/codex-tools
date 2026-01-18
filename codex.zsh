@@ -474,4 +474,5 @@ codex_attach() {
 }
 
 alias codexd='codex --dangerously-bypass-approvals-and-sandbox'
+alias codexda='codex --dangerously-bypass-approvals-and-sandbox --no-alt-screen'
 alias codexfa='codex --full-auto'
