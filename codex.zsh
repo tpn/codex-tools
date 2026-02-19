@@ -439,6 +439,12 @@ codex_tmux() {
         "${tmux_cmd[@]}" attach -t "$session"
     fi
 
+    # Detach returns from attach, but the session can still be alive.
+    if "${tmux_cmd[@]}" has-session -t "$session" 2>/dev/null; then
+        print -r -- "Detached; tmux session still running: $session"
+        return 0
+    fi
+
     if [[ -f "$log" ]]; then
         codex_strip_ansi "$log" "" "$header"
     fi
@@ -473,6 +479,39 @@ codex_attach() {
     "${tmux_cmd[@]}" attach-session -t "$session"
 }
 
+codex_ls() {
+    local tmux_socket
+    local -a tmux_cmd
+    local sessions session_name session_windows session_attached attached_label
+
+    if ! command -v tmux >/dev/null 2>&1; then
+        print -u2 "codex_ls: tmux not found"
+        return 1
+    fi
+
+    tmux_socket="${CODEX_TMUX_SOCKET:-codex}"
+    tmux_cmd=(tmux)
+    if [[ -n "$tmux_socket" ]]; then
+        tmux_cmd+=(-L "$tmux_socket")
+    fi
+
+    sessions="$("${tmux_cmd[@]}" list-sessions -F '#S	#{session_windows}	#{session_attached}' 2>/dev/null)"
+    if [[ -z "$sessions" ]]; then
+        print -r -- "No tmux sessions on socket: ${tmux_socket:-default}"
+        return 0
+    fi
+
+    printf '%-56s %-8s %-10s\n' "SESSION" "WINDOWS" "ATTACHED"
+    while IFS=$'\t' read -r session_name session_windows session_attached; do
+        attached_label="no"
+        if [[ "$session_attached" != "0" ]]; then
+            attached_label="yes($session_attached)"
+        fi
+        printf '%-56s %-8s %-10s\n' "$session_name" "$session_windows" "$attached_label"
+    done <<< "$sessions"
+}
+
 alias codexd='codex --dangerously-bypass-approvals-and-sandbox'
 alias codexda='codex --dangerously-bypass-approvals-and-sandbox --no-alt-screen'
 alias codexfa='codex --full-auto'
+alias codexls='codex_ls'
