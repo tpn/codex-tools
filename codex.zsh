@@ -2,6 +2,32 @@ _set_titlebar() {
     echo -ne "\033]0;$*\007"
 }
 
+_codex_host() {
+    print -r -- "${HOST:-$(hostname 2>/dev/null)}"
+}
+
+_codex_user() {
+    print -r -- "${USER:-$(whoami 2>/dev/null)}"
+}
+
+_codex_session_title() {
+    local session_name="$1"
+    local host="$(_codex_host)"
+
+    host="${host:-unknown}"
+    print -r -- "${host}:${session_name}"
+}
+
+_codex_default_title() {
+    local host user
+
+    host="$(_codex_host)"
+    user="$(_codex_user)"
+    host="${host:-unknown}"
+    user="${user:-unknown}"
+    print -r -- "${user}@${host}"
+}
+
 _codex_prompt_read() {
     local prompt="$1"
     local __var="$2"
@@ -324,12 +350,13 @@ codex_clean() {
 }
 
 codex_script() {
-    local dir log start_pwd header session_name base
+    local dir log start_pwd header session_name base session_title
     local -a codex_args
     dir="$(_codex_log_dir)"
     mkdir -p "$dir"
     session_name="$(_codex_prompt_session_name)" || return 1
-    _set_titlebar "$session_name"
+    session_title="$(_codex_session_title "$session_name")"
+    _set_titlebar "$session_title"
     _codex_prompt_args
     case $? in
         2)
@@ -362,12 +389,12 @@ codex_script() {
 }
 
 codex_tmux() {
-    local dir log base session start_pwd header session_name
+    local dir log base session start_pwd header session_name session_title default_title
     local -a cmd
     local shell_bin
     local tmux_conf tmux_socket
     local -a tmux_cmd
-    local tmux_mouse
+    local tmux_mouse inside_tmux attach_status
 
     if ! command -v tmux >/dev/null 2>&1; then
         print -u2 "codex_tmux: tmux not found"
@@ -377,7 +404,11 @@ codex_tmux() {
     dir="$(_codex_log_dir)"
     mkdir -p "$dir"
     session_name="$(_codex_prompt_session_name)" || return 1
-    _set_titlebar "$session_name"
+    session_title="$(_codex_session_title "$session_name")"
+    default_title="$(_codex_default_title)"
+    inside_tmux="no"
+    [[ -n "${TMUX:-}" ]] && inside_tmux="yes"
+    _set_titlebar "$session_title"
     base="${session_name}-$(date +%Y.%m.%d.%H.%M.%S)"
     log="$dir/${base}.log"
     session="${CODEX_TMUX_SESSION:-codex}-${base//./-}"
@@ -432,11 +463,21 @@ codex_tmux() {
         "${tmux_cmd[@]}" set-option -t "$session" mouse "$tmux_mouse"
     fi
     "${tmux_cmd[@]}" set-option -t "$session" allow-rename off
+    "${tmux_cmd[@]}" set-option -t "$session" @titlebar-title "$session_title"
     "${tmux_cmd[@]}" pipe-pane -o -t "${session}:" "cat >> \"$log\""
-    if [[ -n "${TMUX:-}" ]]; then
+    attach_status=0
+    if [[ "$inside_tmux" == "yes" ]]; then
         "${tmux_cmd[@]}" switch-client -t "$session" || "${tmux_cmd[@]}" attach -t "$session"
     else
         "${tmux_cmd[@]}" attach -t "$session"
+        attach_status=$?
+        _set_titlebar "$default_title"
+    fi
+    if [[ "$inside_tmux" == "yes" ]]; then
+        attach_status=$?
+    fi
+    if (( attach_status != 0 )); then
+        return "$attach_status"
     fi
 
     # Detach returns from attach, but the session can still be alive.
@@ -451,9 +492,10 @@ codex_tmux() {
 }
 
 codex_attach() {
-    local session
+    local session session_title default_title
     local tmux_socket
     local -a tmux_cmd
+    local attach_status
 
     if ! command -v tmux >/dev/null 2>&1; then
         print -u2 "codex_attach: tmux not found"
@@ -476,7 +518,16 @@ codex_attach() {
         return 1
     fi
 
+    session_title="$("${tmux_cmd[@]}" show-options -v -t "$session" @titlebar-title 2>/dev/null)"
+    if [[ -z "$session_title" ]]; then
+        session_title="$session"
+    fi
+    default_title="$(_codex_default_title)"
+    _set_titlebar "$session_title"
     "${tmux_cmd[@]}" attach-session -t "$session"
+    attach_status=$?
+    _set_titlebar "$default_title"
+    return "$attach_status"
 }
 
 codex_ls() {
