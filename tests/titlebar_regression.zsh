@@ -31,6 +31,24 @@ assert_eq() {
     fi
 }
 
+assert_contains() {
+    local haystack="$1"
+    local needle="$2"
+    local message="$3"
+    if [[ "$haystack" != *"$needle"* ]]; then
+        fail "$message: expected to find <$needle>"
+    fi
+}
+
+assert_not_contains() {
+    local haystack="$1"
+    local needle="$2"
+    local message="$3"
+    if [[ "$haystack" == *"$needle"* ]]; then
+        fail "$message: unexpected match <$needle>"
+    fi
+}
+
 assert_title_calls() {
     local expected_first="$1"
     local expected_second="$2"
@@ -237,10 +255,21 @@ test_claude_attach_restores_and_resets_title() {
     assert_title_calls "spark:claude-tools" "trent@spark" "claude attach title sequence"
 }
 
+test_tmux_conf_uses_home_for_clipboard_helper() {
+    local conf_contents
+    local expected='$HOME/src/codex-tools/tmux-copy-clipboard.sh'
+
+    conf_contents="$(<"$PWD/codex.tmux.conf")"
+
+    assert_contains "$conf_contents" "$expected" "tmux conf clipboard helper path"
+    assert_not_contains "$conf_contents" "/home/" "tmux conf hardcoded clipboard helper path"
+}
+
 test_helper_titles
 test_codex_tmux_persists_and_resets_title
 test_codex_attach_restores_and_resets_title
 test_claude_tmux_persists_and_resets_title
 test_claude_attach_restores_and_resets_title
+test_tmux_conf_uses_home_for_clipboard_helper
 
 print -r -- "ok"
