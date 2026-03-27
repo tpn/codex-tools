@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Read selection from stdin and copy to system clipboard.
-# Works on Wayland (wl-copy) or X11 (xclip/xsel).
+# Works on macOS (pbcopy), Wayland (wl-copy), or X11 (xclip/xsel).
 
 set -u
 
@@ -12,6 +12,11 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 cat >"$tmp"
+
+if command -v pbcopy >/dev/null 2>&1; then
+  pbcopy <"$tmp" || true
+  exit 0
+fi
 
 if command -v wl-copy >/dev/null 2>&1; then
   if [ -n "${WAYLAND_DISPLAY:-}" ]; then
