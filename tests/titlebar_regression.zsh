@@ -12,6 +12,7 @@ typeset -ga TMUX_CALLS=()
 typeset -ga TMUX_SESSION_LIST=()
 typeset -gA TMUX_SESSION_EXISTS=()
 typeset -gA TMUX_SESSION_TITLE=()
+typeset -g TEST_TMUX_EXTRA_ENV_FILE="$PWD/.tmp/tmux-extra-env.local"
 typeset -g TEST_FZF_SELECTION=""
 typeset -g TEST_SHOW_OPTIONS_OUTPUT=""
 typeset -g TEST_SESSION_STAMP="2026.03.22.12.34.56"
@@ -68,6 +69,9 @@ reset_mocks() {
     TMUX_SESSION_TITLE=()
     TEST_FZF_SELECTION=""
     TEST_SHOW_OPTIONS_OUTPUT=""
+    unset CODEX_TMUX_EXTRA_ENV_FILE 2>/dev/null || true
+    unset CLAUDE_TMUX_EXTRA_ENV_FILE 2>/dev/null || true
+    rm -f -- "$TEST_TMUX_EXTRA_ENV_FILE" 2>/dev/null || true
     unset TMUX 2>/dev/null || true
 }
 
@@ -211,17 +215,43 @@ test_helper_titles() {
     assert_eq "$(_claude_default_title)" "trent@spark" "claude default title helper"
 }
 
+test_tmux_update_environment_local_file() {
+    local expected="DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY XAUTHORITY WAYLAND_DISPLAY DISTCC_HOSTS MAX_JOBS OPENAI_API_KEY"
+
+    reset_mocks
+    mkdir -p -- "$PWD/.tmp"
+    cat > "$TEST_TMUX_EXTRA_ENV_FILE" <<'EOF'
+# carry interactive distcc state
+DISTCC_HOSTS
+MAX_JOBS
+
+OPENAI_API_KEY  # allow explicit override
+INVALID-NAME
+SSH_AUTH_SOCK
+EOF
+    export CODEX_TMUX_EXTRA_ENV_FILE="$TEST_TMUX_EXTRA_ENV_FILE"
+    export CLAUDE_TMUX_EXTRA_ENV_FILE="$TEST_TMUX_EXTRA_ENV_FILE"
+
+    assert_eq "$(_codex_tmux_update_environment)" "$expected" "codex tmux update-environment local file"
+    assert_eq "$(_claude_tmux_update_environment)" "$expected" "claude tmux update-environment local file"
+}
+
 test_codex_tmux_persists_and_resets_title() {
     local session="codex-codex-tools-2026-03-22-12-34-56"
+    local tmux_calls=""
 
     reset_mocks
     codex_tmux >/dev/null
 
     assert_eq "${TMUX_SESSION_TITLE[$session]}" "spark:codex-tools" "codex tmux stored title"
     assert_title_calls "spark:codex-tools" "trent@spark" "codex tmux title sequence"
+    tmux_calls="${(F)TMUX_CALLS}"
+    assert_contains "$tmux_calls" "set-option -g update-environment DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY XAUTHORITY WAYLAND_DISPLAY" "codex tmux refreshes SSH agent env"
 }
 
 test_codex_attach_restores_and_resets_title() {
+    local tmux_calls=""
+
     reset_mocks
     TMUX_SESSION_LIST=("codex-existing")
     TMUX_SESSION_EXISTS["codex-existing"]=1
@@ -231,19 +261,26 @@ test_codex_attach_restores_and_resets_title() {
     codex_attach >/dev/null
 
     assert_title_calls "spark:codex-tools" "trent@spark" "codex attach title sequence"
+    tmux_calls="${(F)TMUX_CALLS}"
+    assert_contains "$tmux_calls" "set-option -g update-environment DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY XAUTHORITY WAYLAND_DISPLAY" "codex attach refreshes SSH agent env"
 }
 
 test_claude_tmux_persists_and_resets_title() {
     local session="claude-claude-tools-2026-03-22-12-34-56"
+    local tmux_calls=""
 
     reset_mocks
     claude_tmux >/dev/null
 
     assert_eq "${TMUX_SESSION_TITLE[$session]}" "spark:claude-tools" "claude tmux stored title"
     assert_title_calls "spark:claude-tools" "trent@spark" "claude tmux title sequence"
+    tmux_calls="${(F)TMUX_CALLS}"
+    assert_contains "$tmux_calls" "set-option -g update-environment DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY XAUTHORITY WAYLAND_DISPLAY" "claude tmux refreshes SSH agent env"
 }
 
 test_claude_attach_restores_and_resets_title() {
+    local tmux_calls=""
+
     reset_mocks
     TMUX_SESSION_LIST=("claude-existing")
     TMUX_SESSION_EXISTS["claude-existing"]=1
@@ -253,6 +290,8 @@ test_claude_attach_restores_and_resets_title() {
     claude_attach >/dev/null
 
     assert_title_calls "spark:claude-tools" "trent@spark" "claude attach title sequence"
+    tmux_calls="${(F)TMUX_CALLS}"
+    assert_contains "$tmux_calls" "set-option -g update-environment DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY XAUTHORITY WAYLAND_DISPLAY" "claude attach refreshes SSH agent env"
 }
 
 test_tmux_conf_uses_home_for_clipboard_helper() {
@@ -265,11 +304,21 @@ test_tmux_conf_uses_home_for_clipboard_helper() {
     assert_not_contains "$conf_contents" "/home/" "tmux conf hardcoded clipboard helper path"
 }
 
+test_tmux_conf_preserves_ssh_agent_env() {
+    local conf_contents
+
+    conf_contents="$(<"$PWD/codex.tmux.conf")"
+
+    assert_contains "$conf_contents" 'set -g update-environment "DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY XAUTHORITY WAYLAND_DISPLAY"' "tmux conf SSH agent env list"
+}
+
 test_helper_titles
+test_tmux_update_environment_local_file
 test_codex_tmux_persists_and_resets_title
 test_codex_attach_restores_and_resets_title
 test_claude_tmux_persists_and_resets_title
 test_claude_attach_restores_and_resets_title
 test_tmux_conf_uses_home_for_clipboard_helper
+test_tmux_conf_preserves_ssh_agent_env
 
 print -r -- "ok"

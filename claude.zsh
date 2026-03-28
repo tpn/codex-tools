@@ -24,6 +24,43 @@ _claude_default_title() {
     print -r -- "${user}@${host}"
 }
 
+_claude_tmux_extra_environment_file() {
+    print -r -- "${CLAUDE_TMUX_EXTRA_ENV_FILE:-${CODEX_TMUX_EXTRA_ENV_FILE:-$HOME/src/codex-tools/codex.tmux.env.local}}"
+}
+
+_claude_tmux_update_environment() {
+    emulate -L zsh -o extendedglob
+    local file line
+    local -a vars
+
+    vars=(
+        DISPLAY
+        SSH_AUTH_SOCK
+        SSH_AGENT_PID
+        SSH_CLIENT
+        SSH_CONNECTION
+        SSH_TTY
+        XAUTHORITY
+        WAYLAND_DISPLAY
+    )
+
+    file="$(_claude_tmux_extra_environment_file)"
+    if [[ -r "$file" ]]; then
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            line="${line%%\#*}"
+            line=${line##[[:space:]]##}
+            line=${line%%[[:space:]]##}
+            [[ -z "$line" ]] && continue
+            if [[ "$line" =~ '^[A-Za-z_][A-Za-z0-9_]*$' ]]; then
+                vars+=("$line")
+            fi
+        done < "$file"
+    fi
+
+    typeset -U vars
+    print -r -- "${(j: :)vars}"
+}
+
 _claude_prompt_read() {
     local prompt="$1"
     local __var="$2"
@@ -363,7 +400,7 @@ claude_tmux() {
     local dir log base session start_pwd header session_name session_title default_title
     local -a cmd
     local shell_bin
-    local tmux_conf tmux_socket
+    local tmux_conf tmux_socket tmux_update_environment
     local -a tmux_cmd
     local tmux_mouse inside_tmux attach_status
 
@@ -415,6 +452,8 @@ claude_tmux() {
     else
         print -u2 "claude_tmux: tmux conf not found; using default config: $tmux_conf"
     fi
+    tmux_update_environment="$(_claude_tmux_update_environment)"
+    "${tmux_cmd[@]}" set-option -g update-environment "$tmux_update_environment" >/dev/null 2>&1 || true
 
     if ! "${tmux_cmd[@]}" new-session -d -s "$session" -c "$start_pwd" "${cmd[@]}"; then
         print -u2 "claude_tmux: failed to start tmux session"
@@ -464,7 +503,7 @@ claude_tmux() {
 
 claude_attach() {
     local session session_title default_title
-    local tmux_socket
+    local tmux_socket tmux_update_environment
     local -a tmux_cmd
     local attach_status
 
@@ -482,6 +521,8 @@ claude_attach() {
     if [[ -n "$tmux_socket" ]]; then
         tmux_cmd+=(-L "$tmux_socket")
     fi
+    tmux_update_environment="$(_claude_tmux_update_environment)"
+    "${tmux_cmd[@]}" set-option -g update-environment "$tmux_update_environment" >/dev/null 2>&1 || true
 
     session="$("${tmux_cmd[@]}" list-sessions -F '#S' 2>/dev/null | fzf)"
     if [[ -z "$session" ]]; then
