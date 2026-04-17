@@ -6,6 +6,7 @@ export HOST="spark"
 export USER="trent"
 export CODEX_LOG_DIR="$PWD/.tmp/codex-logs"
 export CLAUDE_LOG_DIR="$PWD/.tmp/claude-logs"
+export COPILOT_LOG_DIR="$PWD/.tmp/copilot-logs"
 
 typeset -ga TITLEBAR_CALLS=()
 typeset -ga TMUX_CALLS=()
@@ -71,6 +72,7 @@ reset_mocks() {
     TEST_SHOW_OPTIONS_OUTPUT=""
     unset CODEX_TMUX_EXTRA_ENV_FILE 2>/dev/null || true
     unset CLAUDE_TMUX_EXTRA_ENV_FILE 2>/dev/null || true
+    unset COPILOT_TMUX_EXTRA_ENV_FILE 2>/dev/null || true
     rm -f -- "$TEST_TMUX_EXTRA_ENV_FILE" 2>/dev/null || true
     unset TMUX 2>/dev/null || true
 }
@@ -187,6 +189,7 @@ tmux() {
 
 source "$PWD/codex.zsh"
 source "$PWD/claude.zsh"
+source "$PWD/copilot.zsh"
 
 _set_titlebar() {
     TITLEBAR_CALLS+=("$*")
@@ -200,6 +203,10 @@ _claude_header() {
     print -r -- "claude header"
 }
 
+_copilot_header() {
+    print -r -- "copilot header"
+}
+
 _codex_prompt_session_name() {
     print -r -- "codex-tools"
 }
@@ -208,11 +215,17 @@ _claude_prompt_session_name() {
     print -r -- "claude-tools"
 }
 
+_copilot_prompt_session_name() {
+    print -r -- "copilot-tools"
+}
+
 test_helper_titles() {
     assert_eq "$(_codex_session_title "codex-tools")" "spark:codex-tools" "codex session title helper"
     assert_eq "$(_codex_default_title)" "trent@spark" "codex default title helper"
     assert_eq "$(_claude_session_title "claude-tools")" "spark:claude-tools" "claude session title helper"
     assert_eq "$(_claude_default_title)" "trent@spark" "claude default title helper"
+    assert_eq "$(_copilot_session_title "copilot-tools")" "spark:copilot-tools" "copilot session title helper"
+    assert_eq "$(_copilot_default_title)" "trent@spark" "copilot default title helper"
 }
 
 test_tmux_update_environment_local_file() {
@@ -231,9 +244,11 @@ SSH_AUTH_SOCK
 EOF
     export CODEX_TMUX_EXTRA_ENV_FILE="$TEST_TMUX_EXTRA_ENV_FILE"
     export CLAUDE_TMUX_EXTRA_ENV_FILE="$TEST_TMUX_EXTRA_ENV_FILE"
+    export COPILOT_TMUX_EXTRA_ENV_FILE="$TEST_TMUX_EXTRA_ENV_FILE"
 
     assert_eq "$(_codex_tmux_update_environment)" "$expected" "codex tmux update-environment local file"
     assert_eq "$(_claude_tmux_update_environment)" "$expected" "claude tmux update-environment local file"
+    assert_eq "$(_copilot_tmux_update_environment)" "$expected" "copilot tmux update-environment local file"
 }
 
 test_codex_tmux_persists_and_resets_title() {
@@ -294,6 +309,43 @@ test_claude_attach_restores_and_resets_title() {
     assert_contains "$tmux_calls" "set-option -g update-environment DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY XAUTHORITY WAYLAND_DISPLAY" "claude attach refreshes SSH agent env"
 }
 
+test_copilot_tmux_persists_and_resets_title() {
+    local session="copilot-copilot-tools-2026-03-22-12-34-56"
+    local tmux_calls=""
+
+    reset_mocks
+    copilot_tmux >/dev/null
+
+    assert_eq "${TMUX_SESSION_TITLE[$session]}" "spark:copilot-tools" "copilot tmux stored title"
+    assert_title_calls "spark:copilot-tools" "trent@spark" "copilot tmux title sequence"
+    tmux_calls="${(F)TMUX_CALLS}"
+    assert_contains "$tmux_calls" "set-option -g update-environment DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY XAUTHORITY WAYLAND_DISPLAY" "copilot tmux refreshes SSH agent env"
+}
+
+test_copilot_attach_restores_and_resets_title() {
+    local tmux_calls=""
+
+    reset_mocks
+    TMUX_SESSION_LIST=("copilot-existing")
+    TMUX_SESSION_EXISTS["copilot-existing"]=1
+    TEST_FZF_SELECTION="copilot-existing"
+    TEST_SHOW_OPTIONS_OUTPUT="spark:copilot-tools"
+
+    copilot_attach >/dev/null
+
+    assert_title_calls "spark:copilot-tools" "trent@spark" "copilot attach title sequence"
+    tmux_calls="${(F)TMUX_CALLS}"
+    assert_contains "$tmux_calls" "set-option -g update-environment DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY XAUTHORITY WAYLAND_DISPLAY" "copilot attach refreshes SSH agent env"
+}
+
+test_aliases_are_wired() {
+    assert_eq "${aliases[codexd]}" "codex --dangerously-bypass-approvals-and-sandbox" "codexd alias"
+    assert_eq "${aliases[clauded]}" "claude --dangerously-skip-permissions" "clauded alias"
+    assert_eq "${aliases[copilotd]}" "copilot --allow-all" "copilotd alias"
+    assert_eq "${aliases[copilotfa]}" "copilot --autopilot --allow-all" "copilotfa alias"
+    assert_eq "${aliases[copilotls]}" "copilot_ls" "copilotls alias"
+}
+
 test_tmux_conf_uses_home_for_clipboard_helper() {
     local conf_contents
     local expected='$HOME/src/codex-tools/tmux-copy-clipboard.sh'
@@ -318,7 +370,10 @@ test_codex_tmux_persists_and_resets_title
 test_codex_attach_restores_and_resets_title
 test_claude_tmux_persists_and_resets_title
 test_claude_attach_restores_and_resets_title
+test_copilot_tmux_persists_and_resets_title
+test_copilot_attach_restores_and_resets_title
 test_tmux_conf_uses_home_for_clipboard_helper
 test_tmux_conf_preserves_ssh_agent_env
+test_aliases_are_wired
 
 print -r -- "ok"
