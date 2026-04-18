@@ -10,6 +10,7 @@ export COPILOT_LOG_DIR="$PWD/.tmp/copilot-logs"
 
 typeset -ga TITLEBAR_CALLS=()
 typeset -ga TMUX_CALLS=()
+typeset -ga STRIP_ANSI_CALLS=()
 typeset -ga TMUX_SESSION_LIST=()
 typeset -gA TMUX_SESSION_EXISTS=()
 typeset -gA TMUX_SESSION_TITLE=()
@@ -18,6 +19,7 @@ typeset -g TEST_FZF_SELECTION=""
 typeset -g TEST_SHOW_OPTIONS_OUTPUT=""
 typeset -g TEST_SESSION_STAMP="2026.03.22.12.34.56"
 typeset -g TEST_HEADER_STAMP="2026-03-22 12:34:56 PDT"
+typeset -g TEST_TMUX_ATTACH_EXITS_SESSION="0"
 
 fail() {
     print -u2 -- "FAIL: $*"
@@ -65,11 +67,13 @@ assert_title_calls() {
 reset_mocks() {
     TITLEBAR_CALLS=()
     TMUX_CALLS=()
+    STRIP_ANSI_CALLS=()
     TMUX_SESSION_LIST=()
     TMUX_SESSION_EXISTS=()
     TMUX_SESSION_TITLE=()
     TEST_FZF_SELECTION=""
     TEST_SHOW_OPTIONS_OUTPUT=""
+    TEST_TMUX_ATTACH_EXITS_SESSION="0"
     unset CODEX_TMUX_EXTRA_ENV_FILE 2>/dev/null || true
     unset CLAUDE_TMUX_EXTRA_ENV_FILE 2>/dev/null || true
     unset COPILOT_TMUX_EXTRA_ENV_FILE 2>/dev/null || true
@@ -178,7 +182,38 @@ tmux() {
             fi
             return 0
             ;;
-        attach|attach-session|switch-client|pipe-pane|unbind)
+        attach|attach-session|switch-client)
+            while (( $# > 0 )); do
+                case "$1" in
+                    -t) target="$2"; shift 2 ;;
+                    *) shift ;;
+                esac
+            done
+            if [[ "$TEST_TMUX_ATTACH_EXITS_SESSION" == "1" ]]; then
+                target="${target%:}"
+                unset "TMUX_SESSION_EXISTS[$target]"
+            fi
+            return 0
+            ;;
+        pipe-pane)
+            while (( $# > 0 )); do
+                case "$1" in
+                    -t) target="$2"; shift 2 ;;
+                    -o) shift ;;
+                    *)
+                        if [[ "$1" == *'cat >> "'* ]]; then
+                            local log_path="${1#*cat >> \"}"
+                            log_path="${log_path%\"*}"
+                            mkdir -p -- "${log_path%/*}"
+                            : > "$log_path"
+                        fi
+                        shift
+                        ;;
+                esac
+            done
+            return 0
+            ;;
+        unbind)
             return 0
             ;;
         *)
@@ -205,6 +240,18 @@ _claude_header() {
 
 _copilot_header() {
     print -r -- "copilot header"
+}
+
+codex_strip_ansi() {
+    STRIP_ANSI_CALLS+=("codex:$1:$2:$3")
+}
+
+claude_strip_ansi() {
+    STRIP_ANSI_CALLS+=("claude:$1:$2:$3")
+}
+
+copilot_strip_ansi() {
+    STRIP_ANSI_CALLS+=("copilot:$1:$2:$3")
 }
 
 _codex_prompt_session_name() {
@@ -262,6 +309,8 @@ test_codex_tmux_persists_and_resets_title() {
     assert_title_calls "spark:codex-tools" "trent@spark" "codex tmux title sequence"
     tmux_calls="${(F)TMUX_CALLS}"
     assert_contains "$tmux_calls" "set-option -g update-environment DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY XAUTHORITY WAYLAND_DISPLAY" "codex tmux refreshes SSH agent env"
+    assert_not_contains "$tmux_calls" "pipe-pane -o -t ${session}:" "codex tmux skips logging by default"
+    assert_eq "${#STRIP_ANSI_CALLS[@]}" "0" "codex tmux skips post-processing by default"
 }
 
 test_codex_attach_restores_and_resets_title() {
@@ -291,6 +340,8 @@ test_claude_tmux_persists_and_resets_title() {
     assert_title_calls "spark:claude-tools" "trent@spark" "claude tmux title sequence"
     tmux_calls="${(F)TMUX_CALLS}"
     assert_contains "$tmux_calls" "set-option -g update-environment DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY XAUTHORITY WAYLAND_DISPLAY" "claude tmux refreshes SSH agent env"
+    assert_not_contains "$tmux_calls" "pipe-pane -o -t ${session}:" "claude tmux skips logging by default"
+    assert_eq "${#STRIP_ANSI_CALLS[@]}" "0" "claude tmux skips post-processing by default"
 }
 
 test_claude_attach_restores_and_resets_title() {
@@ -320,6 +371,8 @@ test_copilot_tmux_persists_and_resets_title() {
     assert_title_calls "spark:copilot-tools" "trent@spark" "copilot tmux title sequence"
     tmux_calls="${(F)TMUX_CALLS}"
     assert_contains "$tmux_calls" "set-option -g update-environment DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY XAUTHORITY WAYLAND_DISPLAY" "copilot tmux refreshes SSH agent env"
+    assert_not_contains "$tmux_calls" "pipe-pane -o -t ${session}:" "copilot tmux skips logging by default"
+    assert_eq "${#STRIP_ANSI_CALLS[@]}" "0" "copilot tmux skips post-processing by default"
 }
 
 test_copilot_attach_restores_and_resets_title() {
@@ -344,6 +397,65 @@ test_aliases_are_wired() {
     assert_eq "${aliases[copilotd]}" "copilot --allow-all" "copilotd alias"
     assert_eq "${aliases[copilotfa]}" "copilot --autopilot --allow-all" "copilotfa alias"
     assert_eq "${aliases[copilotls]}" "copilot_ls" "copilotls alias"
+}
+
+test_codex_tmux_log_flag_enables_logging() {
+    local session="codex-codex-tools-2026-03-22-12-34-56"
+    local tmux_calls=""
+
+    reset_mocks
+    TEST_TMUX_ATTACH_EXITS_SESSION="1"
+
+    codex_tmux --log >/dev/null
+
+    tmux_calls="${(F)TMUX_CALLS}"
+    assert_contains "$tmux_calls" "pipe-pane -o -t ${session}: cat >> \"$PWD/.tmp/codex-logs/codex-tools-2026.03.22.12.34.56.log\"" "codex tmux log flag enables pane logging"
+    assert_eq "${#STRIP_ANSI_CALLS[@]}" "1" "codex tmux log flag triggers post-processing"
+    assert_contains "${STRIP_ANSI_CALLS[1]}" "codex:$PWD/.tmp/codex-logs/codex-tools-2026.03.22.12.34.56.log::codex header" "codex tmux log flag passes log path and header"
+}
+
+test_claude_tmux_log_flag_enables_logging() {
+    local session="claude-claude-tools-2026-03-22-12-34-56"
+    local tmux_calls=""
+
+    reset_mocks
+    TEST_TMUX_ATTACH_EXITS_SESSION="1"
+
+    claude_tmux --log >/dev/null
+
+    tmux_calls="${(F)TMUX_CALLS}"
+    assert_contains "$tmux_calls" "pipe-pane -o -t ${session}: cat >> \"$PWD/.tmp/claude-logs/claude-tools-2026.03.22.12.34.56.log\"" "claude tmux log flag enables pane logging"
+    assert_eq "${#STRIP_ANSI_CALLS[@]}" "1" "claude tmux log flag triggers post-processing"
+    assert_contains "${STRIP_ANSI_CALLS[1]}" "claude:$PWD/.tmp/claude-logs/claude-tools-2026.03.22.12.34.56.log::claude header" "claude tmux log flag passes log path and header"
+}
+
+test_copilot_tmux_log_flag_enables_logging() {
+    local session="copilot-copilot-tools-2026-03-22-12-34-56"
+    local tmux_calls=""
+
+    reset_mocks
+    TEST_TMUX_ATTACH_EXITS_SESSION="1"
+
+    copilot_tmux --log >/dev/null
+
+    tmux_calls="${(F)TMUX_CALLS}"
+    assert_contains "$tmux_calls" "pipe-pane -o -t ${session}: cat >> \"$PWD/.tmp/copilot-logs/copilot-tools-2026.03.22.12.34.56.log\"" "copilot tmux log flag enables pane logging"
+    assert_eq "${#STRIP_ANSI_CALLS[@]}" "1" "copilot tmux log flag triggers post-processing"
+    assert_contains "${STRIP_ANSI_CALLS[1]}" "copilot:$PWD/.tmp/copilot-logs/copilot-tools-2026.03.22.12.34.56.log::copilot header" "copilot tmux log flag passes log path and header"
+}
+
+test_tmux_log_flag_rejects_unknown_option() {
+    local output=""
+
+    reset_mocks
+    output="$(codex_tmux --bogus 2>&1)" && fail "codex tmux unknown option should fail"
+    assert_contains "$output" "Usage: codex_tmux [--log]" "codex tmux usage message"
+
+    output="$(claude_tmux --bogus 2>&1)" && fail "claude tmux unknown option should fail"
+    assert_contains "$output" "Usage: claude_tmux [--log]" "claude tmux usage message"
+
+    output="$(copilot_tmux --bogus 2>&1)" && fail "copilot tmux unknown option should fail"
+    assert_contains "$output" "Usage: copilot_tmux [--log]" "copilot tmux usage message"
 }
 
 test_tmux_conf_uses_home_for_clipboard_helper() {
@@ -372,6 +484,10 @@ test_claude_tmux_persists_and_resets_title
 test_claude_attach_restores_and_resets_title
 test_copilot_tmux_persists_and_resets_title
 test_copilot_attach_restores_and_resets_title
+test_codex_tmux_log_flag_enables_logging
+test_claude_tmux_log_flag_enables_logging
+test_copilot_tmux_log_flag_enables_logging
+test_tmux_log_flag_rejects_unknown_option
 test_tmux_conf_uses_home_for_clipboard_helper
 test_tmux_conf_preserves_ssh_agent_env
 test_aliases_are_wired

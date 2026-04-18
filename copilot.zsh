@@ -403,14 +403,24 @@ copilot_tmux() {
     local tmux_conf tmux_socket tmux_update_environment
     local -a tmux_cmd
     local tmux_mouse inside_tmux attach_status
+    local log_enabled="no"
 
     if ! command -v tmux >/dev/null 2>&1; then
         print -u2 "copilot_tmux: tmux not found"
         return 1
     fi
 
-    dir="$(_copilot_log_dir)"
-    mkdir -p "$dir"
+    while (( $# > 0 )); do
+        case "$1" in
+            --log) log_enabled="yes" ;;
+            *)
+                print -u2 "Usage: copilot_tmux [--log]"
+                return 2
+                ;;
+        esac
+        shift
+    done
+
     session_name="$(_copilot_prompt_session_name)" || return 1
     session_title="$(_copilot_session_title "$session_name")"
     default_title="$(_copilot_default_title)"
@@ -418,11 +428,15 @@ copilot_tmux() {
     [[ -n "${TMUX:-}" ]] && inside_tmux="yes"
     _set_titlebar "$session_title"
     base="${session_name}-$(date +%Y.%m.%d.%H.%M.%S)"
-    log="$dir/${base}.log"
     session="${COPILOT_TMUX_SESSION:-copilot}-${base//./-}"
     start_pwd="$PWD"
-    header="$(_copilot_header "$start_pwd" "$session_name")"
-    print -r -- "Logging to $log"
+    if [[ "$log_enabled" == "yes" ]]; then
+        dir="$(_copilot_log_dir)"
+        mkdir -p "$dir"
+        log="$dir/${base}.log"
+        header="$(_copilot_header "$start_pwd" "$session_name")"
+        print -r -- "Logging to $log"
+    fi
 
     shell_bin="/bin/zsh"
     if [[ ! -x "$shell_bin" ]]; then
@@ -474,7 +488,9 @@ copilot_tmux() {
     fi
     "${tmux_cmd[@]}" set-option -t "$session" allow-rename off
     "${tmux_cmd[@]}" set-option -t "$session" @titlebar-title "$session_title"
-    "${tmux_cmd[@]}" pipe-pane -o -t "${session}:" "cat >> \"$log\""
+    if [[ "$log_enabled" == "yes" ]]; then
+        "${tmux_cmd[@]}" pipe-pane -o -t "${session}:" "cat >> \"$log\""
+    fi
     attach_status=0
     if [[ "$inside_tmux" == "yes" ]]; then
         "${tmux_cmd[@]}" switch-client -t "$session" || "${tmux_cmd[@]}" attach -t "$session"
@@ -496,7 +512,7 @@ copilot_tmux() {
         return 0
     fi
 
-    if [[ -f "$log" ]]; then
+    if [[ "$log_enabled" == "yes" && -f "$log" ]]; then
         copilot_strip_ansi "$log" "" "$header"
     fi
 }

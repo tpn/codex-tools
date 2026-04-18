@@ -460,14 +460,24 @@ codex_tmux() {
     local tmux_conf tmux_socket tmux_update_environment
     local -a tmux_cmd
     local tmux_mouse inside_tmux attach_status
+    local log_enabled="no"
 
     if ! command -v tmux >/dev/null 2>&1; then
         print -u2 "codex_tmux: tmux not found"
         return 1
     fi
 
-    dir="$(_codex_log_dir)"
-    mkdir -p "$dir"
+    while (( $# > 0 )); do
+        case "$1" in
+            --log) log_enabled="yes" ;;
+            *)
+                print -u2 "Usage: codex_tmux [--log]"
+                return 2
+                ;;
+        esac
+        shift
+    done
+
     session_name="$(_codex_prompt_session_name)" || return 1
     session_title="$(_codex_session_title "$session_name")"
     default_title="$(_codex_default_title)"
@@ -475,11 +485,15 @@ codex_tmux() {
     [[ -n "${TMUX:-}" ]] && inside_tmux="yes"
     _set_titlebar "$session_title"
     base="${session_name}-$(date +%Y.%m.%d.%H.%M.%S)"
-    log="$dir/${base}.log"
     session="${CODEX_TMUX_SESSION:-codex}-${base//./-}"
     start_pwd="$PWD"
-    header="$(_codex_header "$start_pwd" "$session_name")"
-    print -r -- "Logging to $log"
+    if [[ "$log_enabled" == "yes" ]]; then
+        dir="$(_codex_log_dir)"
+        mkdir -p "$dir"
+        log="$dir/${base}.log"
+        header="$(_codex_header "$start_pwd" "$session_name")"
+        print -r -- "Logging to $log"
+    fi
 
     shell_bin="/bin/zsh"
     if [[ ! -x "$shell_bin" ]]; then
@@ -532,7 +546,9 @@ codex_tmux() {
     fi
     "${tmux_cmd[@]}" set-option -t "$session" allow-rename off
     "${tmux_cmd[@]}" set-option -t "$session" @titlebar-title "$session_title"
-    "${tmux_cmd[@]}" pipe-pane -o -t "${session}:" "cat >> \"$log\""
+    if [[ "$log_enabled" == "yes" ]]; then
+        "${tmux_cmd[@]}" pipe-pane -o -t "${session}:" "cat >> \"$log\""
+    fi
     attach_status=0
     if [[ "$inside_tmux" == "yes" ]]; then
         "${tmux_cmd[@]}" switch-client -t "$session" || "${tmux_cmd[@]}" attach -t "$session"
@@ -554,7 +570,7 @@ codex_tmux() {
         return 0
     fi
 
-    if [[ -f "$log" ]]; then
+    if [[ "$log_enabled" == "yes" && -f "$log" ]]; then
         codex_strip_ansi "$log" "" "$header"
     fi
 }
