@@ -61,6 +61,34 @@ _copilot_tmux_update_environment() {
     print -r -- "${(j: :)vars}"
 }
 
+_copilot_tmux_sync_environment() {
+    local -a tmux_cmd
+    local tmux_socket="${COPILOT_TMUX_SOCKET:-copilot}"
+    local tmux_conf="${COPILOT_TMUX_CONF:-$HOME/src/codex-tools/codex.tmux.conf}"
+    local target="${1:-}"
+    local name value
+
+    tmux_cmd=(tmux)
+    if [[ -n "$tmux_socket" ]]; then
+        tmux_cmd+=(-L "$tmux_socket")
+    fi
+    if [[ -r "$tmux_conf" ]]; then
+        tmux_cmd+=(-f "$tmux_conf")
+    fi
+
+    for name in SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY; do
+        value="${(P)name}"
+        [[ -n "$value" ]] || continue
+        if [[ "$name" == "SSH_AUTH_SOCK" && ! -S "$value" ]]; then
+            continue
+        fi
+        "${tmux_cmd[@]}" set-environment -g "$name" "$value" >/dev/null 2>&1 || true
+        if [[ -n "$target" ]]; then
+            "${tmux_cmd[@]}" set-environment -t "$target" "$name" "$value" >/dev/null 2>&1 || true
+        fi
+    done
+}
+
 _copilot_prompt_read() {
     local prompt="$1"
     local __var="$2"
@@ -468,6 +496,7 @@ copilot_tmux() {
     fi
     tmux_update_environment="$(_copilot_tmux_update_environment)"
     "${tmux_cmd[@]}" set-option -g update-environment "$tmux_update_environment" >/dev/null 2>&1 || true
+    _copilot_tmux_sync_environment
 
     if ! "${tmux_cmd[@]}" new-session -d -s "$session" -c "$start_pwd" "${cmd[@]}"; then
         print -u2 "copilot_tmux: failed to start tmux session"
@@ -539,12 +568,14 @@ copilot_attach() {
     fi
     tmux_update_environment="$(_copilot_tmux_update_environment)"
     "${tmux_cmd[@]}" set-option -g update-environment "$tmux_update_environment" >/dev/null 2>&1 || true
+    _copilot_tmux_sync_environment
 
     session="$("${tmux_cmd[@]}" list-sessions -F '#S' 2>/dev/null | fzf)"
     if [[ -z "$session" ]]; then
         print -u2 "copilot_attach: no session selected"
         return 1
     fi
+    _copilot_tmux_sync_environment "$session"
 
     session_title="$("${tmux_cmd[@]}" show-options -v -t "$session" @titlebar-title 2>/dev/null)"
     if [[ -z "$session_title" ]]; then
