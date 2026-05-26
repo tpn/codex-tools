@@ -38,12 +38,15 @@ _codex_tmux_update_environment() {
     local -a vars
 
     vars=(
+        COLORTERM
         DISPLAY
         SSH_AUTH_SOCK
         SSH_AGENT_PID
         SSH_CLIENT
         SSH_CONNECTION
         SSH_TTY
+        TERM_PROGRAM
+        TERM_PROGRAM_VERSION
         XAUTHORITY
         WAYLAND_DISPLAY
     )
@@ -79,9 +82,12 @@ _codex_tmux_sync_environment() {
     if [[ -r "$tmux_conf" ]]; then
         tmux_cmd+=(-f "$tmux_conf")
     fi
+    if [[ -z "$target" && -r "$tmux_conf" ]]; then
+        "${tmux_cmd[@]}" source-file "$tmux_conf" >/dev/null 2>&1 || true
+    fi
 
-    for name in SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY; do
-        value="${(P)name}"
+    for name in COLORTERM SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY TERM_PROGRAM TERM_PROGRAM_VERSION; do
+        value="${(P)name:-}"
         [[ -n "$value" ]] || continue
         if [[ "$name" == "SSH_AUTH_SOCK" && ! -S "$value" ]]; then
             continue

@@ -276,7 +276,7 @@ test_helper_titles() {
 }
 
 test_tmux_update_environment_local_file() {
-    local expected="DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY XAUTHORITY WAYLAND_DISPLAY DISTCC_HOSTS MAX_JOBS OPENAI_API_KEY"
+    local expected="COLORTERM DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY TERM_PROGRAM TERM_PROGRAM_VERSION XAUTHORITY WAYLAND_DISPLAY DISTCC_HOSTS MAX_JOBS OPENAI_API_KEY"
 
     reset_mocks
     mkdir -p -- "$PWD/.tmp"
@@ -308,7 +308,7 @@ test_codex_tmux_persists_and_resets_title() {
     assert_eq "${TMUX_SESSION_TITLE[$session]}" "spark:codex-tools" "codex tmux stored title"
     assert_title_calls "spark:codex-tools" "trent@spark" "codex tmux title sequence"
     tmux_calls="${(F)TMUX_CALLS}"
-    assert_contains "$tmux_calls" "set-option -g update-environment DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY XAUTHORITY WAYLAND_DISPLAY" "codex tmux refreshes SSH agent env"
+    assert_contains "$tmux_calls" "set-option -g update-environment COLORTERM DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY TERM_PROGRAM TERM_PROGRAM_VERSION XAUTHORITY WAYLAND_DISPLAY" "codex tmux refreshes SSH agent env"
     assert_not_contains "$tmux_calls" "pipe-pane -o -t ${session}:" "codex tmux skips logging by default"
     assert_eq "${#STRIP_ANSI_CALLS[@]}" "0" "codex tmux skips post-processing by default"
 }
@@ -326,7 +326,7 @@ test_codex_attach_restores_and_resets_title() {
 
     assert_title_calls "spark:codex-tools" "trent@spark" "codex attach title sequence"
     tmux_calls="${(F)TMUX_CALLS}"
-    assert_contains "$tmux_calls" "set-option -g update-environment DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY XAUTHORITY WAYLAND_DISPLAY" "codex attach refreshes SSH agent env"
+    assert_contains "$tmux_calls" "set-option -g update-environment COLORTERM DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY TERM_PROGRAM TERM_PROGRAM_VERSION XAUTHORITY WAYLAND_DISPLAY" "codex attach refreshes SSH agent env"
 }
 
 test_claude_tmux_persists_and_resets_title() {
@@ -339,7 +339,7 @@ test_claude_tmux_persists_and_resets_title() {
     assert_eq "${TMUX_SESSION_TITLE[$session]}" "spark:claude-tools" "claude tmux stored title"
     assert_title_calls "spark:claude-tools" "trent@spark" "claude tmux title sequence"
     tmux_calls="${(F)TMUX_CALLS}"
-    assert_contains "$tmux_calls" "set-option -g update-environment DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY XAUTHORITY WAYLAND_DISPLAY" "claude tmux refreshes SSH agent env"
+    assert_contains "$tmux_calls" "set-option -g update-environment COLORTERM DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY TERM_PROGRAM TERM_PROGRAM_VERSION XAUTHORITY WAYLAND_DISPLAY" "claude tmux refreshes SSH agent env"
     assert_not_contains "$tmux_calls" "pipe-pane -o -t ${session}:" "claude tmux skips logging by default"
     assert_eq "${#STRIP_ANSI_CALLS[@]}" "0" "claude tmux skips post-processing by default"
 }
@@ -357,7 +357,7 @@ test_claude_attach_restores_and_resets_title() {
 
     assert_title_calls "spark:claude-tools" "trent@spark" "claude attach title sequence"
     tmux_calls="${(F)TMUX_CALLS}"
-    assert_contains "$tmux_calls" "set-option -g update-environment DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY XAUTHORITY WAYLAND_DISPLAY" "claude attach refreshes SSH agent env"
+    assert_contains "$tmux_calls" "set-option -g update-environment COLORTERM DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY TERM_PROGRAM TERM_PROGRAM_VERSION XAUTHORITY WAYLAND_DISPLAY" "claude attach refreshes SSH agent env"
 }
 
 test_copilot_tmux_persists_and_resets_title() {
@@ -370,7 +370,7 @@ test_copilot_tmux_persists_and_resets_title() {
     assert_eq "${TMUX_SESSION_TITLE[$session]}" "spark:copilot-tools" "copilot tmux stored title"
     assert_title_calls "spark:copilot-tools" "trent@spark" "copilot tmux title sequence"
     tmux_calls="${(F)TMUX_CALLS}"
-    assert_contains "$tmux_calls" "set-option -g update-environment DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY XAUTHORITY WAYLAND_DISPLAY" "copilot tmux refreshes SSH agent env"
+    assert_contains "$tmux_calls" "set-option -g update-environment COLORTERM DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY TERM_PROGRAM TERM_PROGRAM_VERSION XAUTHORITY WAYLAND_DISPLAY" "copilot tmux refreshes SSH agent env"
     assert_not_contains "$tmux_calls" "pipe-pane -o -t ${session}:" "copilot tmux skips logging by default"
     assert_eq "${#STRIP_ANSI_CALLS[@]}" "0" "copilot tmux skips post-processing by default"
 }
@@ -388,7 +388,7 @@ test_copilot_attach_restores_and_resets_title() {
 
     assert_title_calls "spark:copilot-tools" "trent@spark" "copilot attach title sequence"
     tmux_calls="${(F)TMUX_CALLS}"
-    assert_contains "$tmux_calls" "set-option -g update-environment DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY XAUTHORITY WAYLAND_DISPLAY" "copilot attach refreshes SSH agent env"
+    assert_contains "$tmux_calls" "set-option -g update-environment COLORTERM DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY TERM_PROGRAM TERM_PROGRAM_VERSION XAUTHORITY WAYLAND_DISPLAY" "copilot attach refreshes SSH agent env"
 }
 
 test_aliases_are_wired() {
@@ -473,7 +473,16 @@ test_tmux_conf_preserves_ssh_agent_env() {
 
     conf_contents="$(<"$PWD/codex.tmux.conf")"
 
-    assert_contains "$conf_contents" 'set -g update-environment "DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY XAUTHORITY WAYLAND_DISPLAY"' "tmux conf SSH agent env list"
+    assert_contains "$conf_contents" 'set -g update-environment "COLORTERM DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY TERM_PROGRAM TERM_PROGRAM_VERSION XAUTHORITY WAYLAND_DISPLAY"' "tmux conf SSH agent env list"
+}
+
+test_tmux_conf_enables_truecolor() {
+    local conf_contents
+
+    conf_contents="$(<"$PWD/codex.tmux.conf")"
+
+    assert_contains "$conf_contents" 'set -g default-terminal "tmux-256color"' "tmux conf default terminal"
+    assert_contains "$conf_contents" 'set -g terminal-features "xterm*:clipboard:ccolour:cstyle:focus:title:RGB,screen*:title:RGB,rxvt*:ignorefkeys,*:RGB"' "tmux conf RGB terminal features"
 }
 
 test_helper_titles
@@ -490,6 +499,7 @@ test_copilot_tmux_log_flag_enables_logging
 test_tmux_log_flag_rejects_unknown_option
 test_tmux_conf_uses_home_for_clipboard_helper
 test_tmux_conf_preserves_ssh_agent_env
+test_tmux_conf_enables_truecolor
 test_aliases_are_wired
 
 print -r -- "ok"
