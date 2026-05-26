@@ -298,6 +298,38 @@ EOF
     assert_eq "$(_copilot_tmux_update_environment)" "$expected" "copilot tmux update-environment local file"
 }
 
+test_codex_tmux_sync_environment_refreshes_display_vars() {
+    local tmux_calls=""
+    local xauth="$PWD/.tmp/test.Xauthority"
+
+    reset_mocks
+    mkdir -p -- "$PWD/.tmp"
+    : > "$xauth"
+    export DISPLAY=":1"
+    export XAUTHORITY="$xauth"
+
+    _codex_tmux_sync_environment "codex-existing"
+
+    tmux_calls="${(F)TMUX_CALLS}"
+    assert_contains "$tmux_calls" "set-environment -g DISPLAY :1" "codex sync refreshes global DISPLAY"
+    assert_contains "$tmux_calls" "set-environment -t codex-existing DISPLAY :1" "codex sync refreshes session DISPLAY"
+    assert_contains "$tmux_calls" "set-environment -g XAUTHORITY $xauth" "codex sync refreshes global XAUTHORITY"
+    assert_contains "$tmux_calls" "set-environment -t codex-existing XAUTHORITY $xauth" "codex sync refreshes session XAUTHORITY"
+}
+
+test_codex_tmux_sync_environment_skips_forwarded_display() {
+    local tmux_calls=""
+
+    reset_mocks
+    export DISPLAY="localhost:10.0"
+
+    _codex_tmux_sync_environment "codex-existing"
+
+    tmux_calls="${(F)TMUX_CALLS}"
+    assert_not_contains "$tmux_calls" "set-environment -g DISPLAY localhost:10.0" "codex sync skips forwarded global DISPLAY"
+    assert_not_contains "$tmux_calls" "set-environment -t codex-existing DISPLAY localhost:10.0" "codex sync skips forwarded session DISPLAY"
+}
+
 test_codex_tmux_persists_and_resets_title() {
     local session="codex-codex-tools-2026-03-22-12-34-56"
     local tmux_calls=""
@@ -487,6 +519,8 @@ test_tmux_conf_enables_truecolor() {
 
 test_helper_titles
 test_tmux_update_environment_local_file
+test_codex_tmux_sync_environment_refreshes_display_vars
+test_codex_tmux_sync_environment_skips_forwarded_display
 test_codex_tmux_persists_and_resets_title
 test_codex_attach_restores_and_resets_title
 test_claude_tmux_persists_and_resets_title

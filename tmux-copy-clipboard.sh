@@ -24,17 +24,39 @@ if command -v wl-copy >/dev/null 2>&1; then
   fi
 fi
 
-# X11 fallback.
-if [ -z "${DISPLAY:-}" ]; then
+_local_x_socket_display() {
   for s in /tmp/.X11-unix/X*; do
     [ -S "$s" ] || continue
-    DISPLAY=":$(basename "$s" | sed 's/^X//')"
-    export DISPLAY
-    break
+    printf ':%s\n' "$(basename "$s" | sed 's/^X//')"
+    return 0
   done
+  return 1
+}
+
+_display_is_ssh_forwarded() {
+  case "${DISPLAY:-}" in
+    localhost:*|127.0.0.1:*|\[::1\]:*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# X11 fallback.  Tmux sessions can retain stale SSH-forwarded displays such as
+# localhost:10.0; those cannot update the workstation clipboard after the SSH
+# session is gone, so prefer a real local X socket when one exists.
+if [ -z "${DISPLAY:-}" ] || _display_is_ssh_forwarded; then
+  local_display="$(_local_x_socket_display || true)"
+  if [ -n "$local_display" ]; then
+    DISPLAY="$local_display"
+    export DISPLAY
+  fi
 fi
-if [ -z "${XAUTHORITY:-}" ]; then
-  XAUTHORITY="$HOME/.Xauthority"
+if [ -z "${XAUTHORITY:-}" ] || [ ! -r "${XAUTHORITY:-}" ]; then
+  uid="$(id -u 2>/dev/null || true)"
+  if [ -n "$uid" ] && [ -r "/run/user/$uid/gdm/Xauthority" ]; then
+    XAUTHORITY="/run/user/$uid/gdm/Xauthority"
+  else
+    XAUTHORITY="$HOME/.Xauthority"
+  fi
   export XAUTHORITY
 fi
 

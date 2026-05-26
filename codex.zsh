@@ -86,9 +86,15 @@ _codex_tmux_sync_environment() {
         "${tmux_cmd[@]}" source-file "$tmux_conf" >/dev/null 2>&1 || true
     fi
 
-    for name in COLORTERM SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY TERM_PROGRAM TERM_PROGRAM_VERSION; do
+    for name in COLORTERM DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY TERM_PROGRAM TERM_PROGRAM_VERSION XAUTHORITY WAYLAND_DISPLAY; do
         value="${(P)name:-}"
         [[ -n "$value" ]] || continue
+        if [[ "$name" == "DISPLAY" && ( "$value" == localhost:* || "$value" == 127.0.0.1:* || "$value" == \[::1\]:* ) ]]; then
+            continue
+        fi
+        if [[ "$name" == "XAUTHORITY" && ! -r "$value" ]]; then
+            continue
+        fi
         if [[ "$name" == "SSH_AUTH_SOCK" && ! -S "$value" ]]; then
             continue
         fi
