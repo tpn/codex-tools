@@ -361,6 +361,24 @@ test_codex_attach_restores_and_resets_title() {
     assert_contains "$tmux_calls" "set-option -g update-environment COLORTERM DISPLAY SSH_AUTH_SOCK SSH_AGENT_PID SSH_CLIENT SSH_CONNECTION SSH_TTY TERM_PROGRAM TERM_PROGRAM_VERSION XAUTHORITY WAYLAND_DISPLAY" "codex attach refreshes SSH agent env"
 }
 
+test_codex_attach_switches_client_inside_tmux() {
+    local tmux_calls=""
+    local TMUX
+
+    reset_mocks
+    TMUX="/tmp/tmux-$(id -u)/codex,1234,0"
+    TMUX_SESSION_LIST=("codex-existing")
+    TMUX_SESSION_EXISTS["codex-existing"]=1
+    TEST_FZF_SELECTION="codex-existing"
+    TEST_SHOW_OPTIONS_OUTPUT="spark:codex-tools"
+
+    codex_attach >/dev/null
+
+    tmux_calls="${(F)TMUX_CALLS}"
+    assert_contains "$tmux_calls" "switch-client -t codex-existing" "codex attach switches existing tmux client"
+    assert_not_contains "$tmux_calls" "attach-session -t codex-existing" "codex attach avoids nested attach inside tmux"
+}
+
 test_claude_tmux_persists_and_resets_title() {
     local session="claude-claude-tools-2026-03-22-12-34-56"
     local tmux_calls=""
@@ -523,6 +541,7 @@ test_codex_tmux_sync_environment_refreshes_display_vars
 test_codex_tmux_sync_environment_skips_forwarded_display
 test_codex_tmux_persists_and_resets_title
 test_codex_attach_restores_and_resets_title
+test_codex_attach_switches_client_inside_tmux
 test_claude_tmux_persists_and_resets_title
 test_claude_attach_restores_and_resets_title
 test_copilot_tmux_persists_and_resets_title

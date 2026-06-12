@@ -588,7 +588,7 @@ codex_tmux() {
 }
 
 codex_attach() {
-    local session session_title default_title
+    local session session_title default_title inside_tmux
     local tmux_socket tmux_update_environment
     local -a tmux_cmd
     local attach_status
@@ -603,6 +603,8 @@ codex_attach() {
     fi
 
     tmux_socket="${CODEX_TMUX_SOCKET:-codex}"
+    inside_tmux="no"
+    [[ -n "${TMUX:-}" ]] && inside_tmux="yes"
     tmux_cmd=(tmux)
     if [[ -n "$tmux_socket" ]]; then
         tmux_cmd+=(-L "$tmux_socket")
@@ -624,7 +626,11 @@ codex_attach() {
     fi
     default_title="$(_codex_default_title)"
     _set_titlebar "$session_title"
-    "${tmux_cmd[@]}" attach-session -t "$session"
+    if [[ "$inside_tmux" == "yes" ]]; then
+        "${tmux_cmd[@]}" switch-client -t "$session"
+    else
+        "${tmux_cmd[@]}" attach-session -t "$session"
+    fi
     attach_status=$?
     _set_titlebar "$default_title"
     return "$attach_status"
