@@ -535,6 +535,14 @@ test_tmux_conf_enables_truecolor() {
     assert_contains "$conf_contents" 'set -g terminal-features "xterm*:clipboard:ccolour:cstyle:focus:title:RGB,screen*:title:RGB,rxvt*:ignorefkeys,*:RGB"' "tmux conf RGB terminal features"
 }
 
+test_tmux_conf_forces_mosh_clipboard_selector() {
+    local conf_contents
+
+    conf_contents="$(<"$PWD/codex.tmux.conf")"
+
+    assert_contains "$conf_contents" 'set -as terminal-overrides ",xterm*:Ms=\\E]52;c;%p2%s\\007"' "tmux conf mosh OSC 52 clipboard selector"
+}
+
 test_helper_titles
 test_tmux_update_environment_local_file
 test_codex_tmux_sync_environment_refreshes_display_vars
@@ -553,6 +561,7 @@ test_tmux_log_flag_rejects_unknown_option
 test_tmux_conf_uses_home_for_clipboard_helper
 test_tmux_conf_preserves_ssh_agent_env
 test_tmux_conf_enables_truecolor
+test_tmux_conf_forces_mosh_clipboard_selector
 test_aliases_are_wired
 
 print -r -- "ok"
