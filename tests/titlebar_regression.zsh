@@ -540,7 +540,37 @@ test_tmux_conf_forces_mosh_clipboard_selector() {
 
     conf_contents="$(<"$PWD/codex.tmux.conf")"
 
-    assert_contains "$conf_contents" 'set -as terminal-overrides ",xterm*:Ms=\\E]52;c;%p2%s\\007"' "tmux conf mosh OSC 52 clipboard selector"
+    assert_contains "$conf_contents" 'set -g terminal-overrides "xterm*:Ms=\\E]52;c;%p2%s\\007"' "tmux conf mosh OSC 52 clipboard selector"
+}
+
+test_clipboard_helper_prefers_clip_exe_on_wsl() {
+    local bin_dir out copied
+
+    bin_dir="$PWD/.tmp/mock-bin"
+    out="$PWD/.tmp/clip.out"
+    rm -rf -- "$bin_dir"
+    mkdir -p -- "$bin_dir"
+
+    cat >"$bin_dir/clip.exe" <<'EOF'
+#!/bin/sh
+cat >"$CLIP_MOCK_OUT"
+EOF
+    cat >"$bin_dir/wl-copy" <<'EOF'
+#!/bin/sh
+printf '%s\n' "wl-copy should not run" >"$CLIP_MOCK_OUT"
+exit 99
+EOF
+    cat >"$bin_dir/xclip" <<'EOF'
+#!/bin/sh
+printf '%s\n' "xclip should not run" >"$CLIP_MOCK_OUT"
+exit 99
+EOF
+    chmod +x -- "$bin_dir/clip.exe" "$bin_dir/wl-copy" "$bin_dir/xclip"
+
+    printf 'wsl-copy' | env WSL_DISTRO_NAME=Ubuntu CLIP_MOCK_OUT="$out" PATH="$bin_dir:/usr/bin:/bin" "$PWD/tmux-copy-clipboard.sh"
+
+    copied="$(<"$out")"
+    assert_eq "$copied" "wsl-copy" "clipboard helper prefers clip.exe on WSL"
 }
 
 test_helper_titles
@@ -562,6 +592,7 @@ test_tmux_conf_uses_home_for_clipboard_helper
 test_tmux_conf_preserves_ssh_agent_env
 test_tmux_conf_enables_truecolor
 test_tmux_conf_forces_mosh_clipboard_selector
+test_clipboard_helper_prefers_clip_exe_on_wsl
 test_aliases_are_wired
 
 print -r -- "ok"
