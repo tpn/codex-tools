@@ -98,6 +98,18 @@ fzf() {
     print -r -- "$TEST_FZF_SELECTION"
 }
 
+make_dead_socket() {
+    local sock_path="$1"
+
+    command python3 - "$sock_path" <<'PY'
+import socket
+import sys
+
+sock = socket.socket(socket.AF_UNIX)
+sock.bind(sys.argv[1])
+PY
+}
+
 tmux() {
     local cmd=""
     local target=""
@@ -328,6 +340,39 @@ test_codex_tmux_sync_environment_skips_forwarded_display() {
     tmux_calls="${(F)TMUX_CALLS}"
     assert_not_contains "$tmux_calls" "set-environment -g DISPLAY localhost:10.0" "codex sync skips forwarded global DISPLAY"
     assert_not_contains "$tmux_calls" "set-environment -t codex-existing DISPLAY localhost:10.0" "codex sync skips forwarded session DISPLAY"
+}
+
+test_tmux_sync_environment_skips_dead_ssh_agent_socket() {
+    local tmux_calls=""
+    local sock="$PWD/.tmp/dead-agent.sock"
+
+    reset_mocks
+    mkdir -p -- "$PWD/.tmp"
+    rm -f -- "$sock"
+    make_dead_socket "$sock"
+    export SSH_AUTH_SOCK="$sock"
+
+    _codex_tmux_sync_environment "codex-existing"
+    _claude_tmux_sync_environment "claude-existing"
+    _copilot_tmux_sync_environment "copilot-existing"
+
+    tmux_calls="${(F)TMUX_CALLS}"
+    assert_not_contains \
+        "$tmux_calls" \
+        "set-environment -g SSH_AUTH_SOCK $sock" \
+        "tmux sync skips dead global SSH_AUTH_SOCK"
+    assert_not_contains \
+        "$tmux_calls" \
+        "set-environment -t codex-existing SSH_AUTH_SOCK $sock" \
+        "codex sync skips dead session SSH_AUTH_SOCK"
+    assert_not_contains \
+        "$tmux_calls" \
+        "set-environment -t claude-existing SSH_AUTH_SOCK $sock" \
+        "claude sync skips dead session SSH_AUTH_SOCK"
+    assert_not_contains \
+        "$tmux_calls" \
+        "set-environment -t copilot-existing SSH_AUTH_SOCK $sock" \
+        "copilot sync skips dead session SSH_AUTH_SOCK"
 }
 
 test_codex_tmux_persists_and_resets_title() {
@@ -577,6 +622,7 @@ test_helper_titles
 test_tmux_update_environment_local_file
 test_codex_tmux_sync_environment_refreshes_display_vars
 test_codex_tmux_sync_environment_skips_forwarded_display
+test_tmux_sync_environment_skips_dead_ssh_agent_socket
 test_codex_tmux_persists_and_resets_title
 test_codex_attach_restores_and_resets_title
 test_codex_attach_switches_client_inside_tmux

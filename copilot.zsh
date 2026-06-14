@@ -64,6 +64,20 @@ _copilot_tmux_update_environment() {
     print -r -- "${(j: :)vars}"
 }
 
+_copilot_ssh_auth_sock_valid() {
+    local sock="$1"
+    local ssh_add_status
+
+    [[ -n "$sock" && -S "$sock" ]] || return 1
+    SSH_AUTH_SOCK="$sock" command ssh-add -l >/dev/null 2>&1
+    ssh_add_status=$?
+
+    case "$ssh_add_status" in
+        0|1) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 _copilot_tmux_sync_environment() {
     local -a tmux_cmd
     local tmux_socket="${COPILOT_TMUX_SOCKET:-copilot}"
@@ -91,7 +105,8 @@ _copilot_tmux_sync_environment() {
         if [[ "$name" == "XAUTHORITY" && ! -r "$value" ]]; then
             continue
         fi
-        if [[ "$name" == "SSH_AUTH_SOCK" && ! -S "$value" ]]; then
+        if [[ "$name" == "SSH_AUTH_SOCK" ]] \
+            && ! _copilot_ssh_auth_sock_valid "$value"; then
             continue
         fi
         "${tmux_cmd[@]}" set-environment -g "$name" "$value" >/dev/null 2>&1 || true
