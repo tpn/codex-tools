@@ -329,7 +329,7 @@ test_codex_tmux_sync_environment_refreshes_display_vars() {
     assert_contains "$tmux_calls" "set-environment -t codex-existing XAUTHORITY $xauth" "codex sync refreshes session XAUTHORITY"
 }
 
-test_codex_tmux_sync_environment_skips_forwarded_display() {
+test_codex_tmux_sync_environment_refreshes_forwarded_display() {
     local tmux_calls=""
 
     reset_mocks
@@ -338,8 +338,8 @@ test_codex_tmux_sync_environment_skips_forwarded_display() {
     _codex_tmux_sync_environment "codex-existing"
 
     tmux_calls="${(F)TMUX_CALLS}"
-    assert_not_contains "$tmux_calls" "set-environment -g DISPLAY localhost:10.0" "codex sync skips forwarded global DISPLAY"
-    assert_not_contains "$tmux_calls" "set-environment -t codex-existing DISPLAY localhost:10.0" "codex sync skips forwarded session DISPLAY"
+    assert_contains "$tmux_calls" "set-environment -g DISPLAY localhost:10.0" "codex sync refreshes forwarded global DISPLAY"
+    assert_contains "$tmux_calls" "set-environment -t codex-existing DISPLAY localhost:10.0" "codex sync refreshes forwarded session DISPLAY"
 }
 
 test_tmux_sync_environment_skips_dead_ssh_agent_socket() {
@@ -618,10 +618,58 @@ EOF
     assert_eq "$copied" "wsl-copy" "clipboard helper prefers clip.exe on WSL"
 }
 
+test_clipboard_helper_prefers_active_forwarded_display() {
+    local bin_dir out copied
+
+    bin_dir="$PWD/.tmp/mock-bin"
+    out="$PWD/.tmp/xclip.out"
+    rm -rf -- "$bin_dir"
+    mkdir -p -- "$bin_dir"
+
+    cat >"$bin_dir/xclip" <<'EOF'
+#!/bin/sh
+printf 'DISPLAY=%s\n' "${DISPLAY:-}" >"$CLIP_MOCK_OUT"
+cat >>"$CLIP_MOCK_OUT"
+EOF
+    chmod +x -- "$bin_dir/xclip"
+
+    printf 'forwarded-copy' | env -u WAYLAND_DISPLAY -u WSL_DISTRO_NAME -u WSL_INTEROP CLIP_MOCK_OUT="$out" DISPLAY=localhost:20.0 PATH="$bin_dir:/usr/bin:/bin" "$PWD/tmux-copy-clipboard.sh"
+
+    copied="$(<"$out")"
+    assert_eq "$copied" $'DISPLAY=localhost:20.0\nforwarded-copy' "clipboard helper prefers active SSH-forwarded DISPLAY"
+}
+
+test_clipboard_helper_retries_forwarded_display_with_home_xauthority() {
+    local bin_dir out copied home_dir stale_xauth
+
+    bin_dir="$PWD/.tmp/mock-bin"
+    home_dir="$PWD/.tmp/mock-home"
+    stale_xauth="/run/user/1000/gdm/Xauthority"
+    out="$PWD/.tmp/xclip-xauthority.out"
+    rm -rf -- "$bin_dir" "$home_dir"
+    mkdir -p -- "$bin_dir" "$home_dir"
+    : > "$home_dir/.Xauthority"
+
+    cat >"$bin_dir/xclip" <<'EOF'
+#!/bin/sh
+if [ "${XAUTHORITY:-}" != "$HOME/.Xauthority" ]; then
+  exit 1
+fi
+printf 'DISPLAY=%s XAUTHORITY=%s\n' "${DISPLAY:-}" "${XAUTHORITY:-}" >"$CLIP_MOCK_OUT"
+cat >>"$CLIP_MOCK_OUT"
+EOF
+    chmod +x -- "$bin_dir/xclip"
+
+    printf 'forwarded-xauth-copy' | env -u WAYLAND_DISPLAY -u WSL_DISTRO_NAME -u WSL_INTEROP CLIP_MOCK_OUT="$out" DISPLAY=localhost:20.0 XAUTHORITY="$stale_xauth" HOME="$home_dir" PATH="$bin_dir:/usr/bin:/bin" "$PWD/tmux-copy-clipboard.sh"
+
+    copied="$(<"$out")"
+    assert_eq "$copied" "DISPLAY=localhost:20.0 XAUTHORITY=$home_dir/.Xauthority"$'\nforwarded-xauth-copy' "clipboard helper retries forwarded DISPLAY with home Xauthority"
+}
+
 test_helper_titles
 test_tmux_update_environment_local_file
 test_codex_tmux_sync_environment_refreshes_display_vars
-test_codex_tmux_sync_environment_skips_forwarded_display
+test_codex_tmux_sync_environment_refreshes_forwarded_display
 test_tmux_sync_environment_skips_dead_ssh_agent_socket
 test_codex_tmux_persists_and_resets_title
 test_codex_attach_restores_and_resets_title
@@ -639,6 +687,8 @@ test_tmux_conf_preserves_ssh_agent_env
 test_tmux_conf_enables_truecolor
 test_tmux_conf_forces_mosh_clipboard_selector
 test_clipboard_helper_prefers_clip_exe_on_wsl
+test_clipboard_helper_prefers_active_forwarded_display
+test_clipboard_helper_retries_forwarded_display_with_home_xauthority
 test_aliases_are_wired
 
 print -r -- "ok"

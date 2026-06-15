@@ -52,6 +52,62 @@ _display_is_ssh_forwarded() {
   esac
 }
 
+_copy_x11() {
+  if command -v xclip >/dev/null 2>&1; then
+    xclip -selection clipboard -in <"$tmp" 2>/dev/null && return 0
+  fi
+
+  if command -v xsel >/dev/null 2>&1; then
+    xsel --clipboard --input <"$tmp" 2>/dev/null && return 0
+  fi
+
+  return 1
+}
+
+_prepare_forwarded_xauthority() {
+  _display_is_ssh_forwarded || return 0
+  [ -r "$HOME/.Xauthority" ] || return 0
+
+  if [ -z "${XAUTHORITY:-}" ]; then
+    XAUTHORITY="$HOME/.Xauthority"
+    export XAUTHORITY
+    return 0
+  fi
+
+  [ "$XAUTHORITY" != "$HOME/.Xauthority" ] || return 0
+  case "$XAUTHORITY" in
+    /run/user/*/gdm/Xauthority)
+      XAUTHORITY="$HOME/.Xauthority"
+      export XAUTHORITY
+      return 0
+      ;;
+  esac
+
+  if command -v xauth >/dev/null 2>&1 \
+    && xauth -f "$XAUTHORITY" list "$DISPLAY" 2>/dev/null | grep -q .; then
+    return 0
+  fi
+
+  XAUTHORITY="$HOME/.Xauthority"
+  export XAUTHORITY
+}
+
+# First try the active X display exactly as provided by the current session.
+# A fresh SSH-forwarded DISPLAY points back to the workstation clipboard; only
+# fall back to local X sockets if that path is absent or unusable.
+_prepare_forwarded_xauthority
+if [ -n "${DISPLAY:-}" ] && _copy_x11; then
+  exit 0
+fi
+
+if _display_is_ssh_forwarded && [ -r "$HOME/.Xauthority" ]; then
+  XAUTHORITY="$HOME/.Xauthority"
+  export XAUTHORITY
+  if _copy_x11; then
+    exit 0
+  fi
+fi
+
 # X11 fallback.  Tmux sessions can retain stale SSH-forwarded displays such as
 # localhost:10.0; those cannot update the workstation clipboard after the SSH
 # session is gone, so prefer a real local X socket when one exists.
@@ -72,13 +128,7 @@ if [ -z "${XAUTHORITY:-}" ] || [ ! -r "${XAUTHORITY:-}" ]; then
   export XAUTHORITY
 fi
 
-if command -v xclip >/dev/null 2>&1; then
-  xclip -selection clipboard -in <"$tmp" || true
-  exit 0
-fi
-
-if command -v xsel >/dev/null 2>&1; then
-  xsel --clipboard --input <"$tmp" || true
+if _copy_x11; then
   exit 0
 fi
 
