@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Read selection from stdin and copy to system clipboard.
-# Works on WSL (clip.exe), Wayland (wl-copy), or X11 (xclip/xsel).
+# Works on macOS (pbcopy), WSL (clip.exe), Wayland (wl-copy), or X11 (xclip/xsel).
 
 set -u
 
@@ -13,12 +13,21 @@ trap cleanup EXIT INT TERM
 
 cat >"$tmp"
 
+_is_macos() {
+  [ "$(uname -s 2>/dev/null)" = "Darwin" ]
+}
+
 _is_wsl() {
   [ -n "${WSL_DISTRO_NAME:-}" ] && return 0
   [ -n "${WSL_INTEROP:-}" ] && return 0
   [ -e /proc/sys/fs/binfmt_misc/WSLInterop ] && return 0
   grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null
 }
+
+if _is_macos && command -v pbcopy >/dev/null 2>&1; then
+  pbcopy <"$tmp" || true
+  exit 0
+fi
 
 if _is_wsl && command -v clip.exe >/dev/null 2>&1; then
   clip.exe <"$tmp" || true

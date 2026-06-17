@@ -610,7 +610,11 @@ EOF
 printf '%s\n' "xclip should not run" >"$CLIP_MOCK_OUT"
 exit 99
 EOF
-    chmod +x -- "$bin_dir/clip.exe" "$bin_dir/wl-copy" "$bin_dir/xclip"
+    cat >"$bin_dir/uname" <<'EOF'
+#!/bin/sh
+printf '%s\n' Linux
+EOF
+    chmod +x "$bin_dir/clip.exe" "$bin_dir/wl-copy" "$bin_dir/xclip" "$bin_dir/uname"
 
     printf 'wsl-copy' | env WSL_DISTRO_NAME=Ubuntu CLIP_MOCK_OUT="$out" PATH="$bin_dir:/usr/bin:/bin" "$PWD/tmux-copy-clipboard.sh"
 
@@ -631,7 +635,11 @@ test_clipboard_helper_prefers_active_forwarded_display() {
 printf 'DISPLAY=%s\n' "${DISPLAY:-}" >"$CLIP_MOCK_OUT"
 cat >>"$CLIP_MOCK_OUT"
 EOF
-    chmod +x -- "$bin_dir/xclip"
+    cat >"$bin_dir/uname" <<'EOF'
+#!/bin/sh
+printf '%s\n' Linux
+EOF
+    chmod +x "$bin_dir/xclip" "$bin_dir/uname"
 
     printf 'forwarded-copy' | env -u WAYLAND_DISPLAY -u WSL_DISTRO_NAME -u WSL_INTEROP CLIP_MOCK_OUT="$out" DISPLAY=localhost:20.0 PATH="$bin_dir:/usr/bin:/bin" "$PWD/tmux-copy-clipboard.sh"
 
@@ -658,7 +666,11 @@ fi
 printf 'DISPLAY=%s XAUTHORITY=%s\n' "${DISPLAY:-}" "${XAUTHORITY:-}" >"$CLIP_MOCK_OUT"
 cat >>"$CLIP_MOCK_OUT"
 EOF
-    chmod +x -- "$bin_dir/xclip"
+    cat >"$bin_dir/uname" <<'EOF'
+#!/bin/sh
+printf '%s\n' Linux
+EOF
+    chmod +x "$bin_dir/xclip" "$bin_dir/uname"
 
     printf 'forwarded-xauth-copy' | env -u WAYLAND_DISPLAY -u WSL_DISTRO_NAME -u WSL_INTEROP CLIP_MOCK_OUT="$out" DISPLAY=localhost:20.0 XAUTHORITY="$stale_xauth" HOME="$home_dir" PATH="$bin_dir:/usr/bin:/bin" "$PWD/tmux-copy-clipboard.sh"
 
