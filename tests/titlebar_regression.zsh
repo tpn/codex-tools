@@ -77,8 +77,12 @@ reset_mocks() {
     unset CODEX_TMUX_EXTRA_ENV_FILE 2>/dev/null || true
     unset CLAUDE_TMUX_EXTRA_ENV_FILE 2>/dev/null || true
     unset COPILOT_TMUX_EXTRA_ENV_FILE 2>/dev/null || true
+    unset CODEX_SSH_AUTH_SOCK_GLOB 2>/dev/null || true
+    unset CLAUDE_SSH_AUTH_SOCK_GLOB 2>/dev/null || true
+    unset COPILOT_SSH_AUTH_SOCK_GLOB 2>/dev/null || true
     rm -f -- "$TEST_TMUX_EXTRA_ENV_FILE" 2>/dev/null || true
     unset TMUX 2>/dev/null || true
+    unset SSH_AUTH_SOCK 2>/dev/null || true
 }
 
 date() {
@@ -373,6 +377,46 @@ test_tmux_sync_environment_skips_dead_ssh_agent_socket() {
         "$tmux_calls" \
         "set-environment -t copilot-existing SSH_AUTH_SOCK $sock" \
         "copilot sync skips dead session SSH_AUTH_SOCK"
+}
+
+test_tmux_sync_environment_recovers_live_ssh_agent_socket() {
+    local tmux_calls=""
+    local old_path="$PATH"
+    local bin_dir="$PWD/.tmp/mock-bin"
+    local dead_sock="$PWD/.tmp/dead-agent.sock"
+    local good_sock="$PWD/.tmp/good-agent.sock"
+
+    reset_mocks
+    mkdir -p -- "$bin_dir" "$PWD/.tmp"
+    rm -f -- "$dead_sock" "$good_sock"
+    make_dead_socket "$dead_sock"
+    make_dead_socket "$good_sock"
+    cat >"$bin_dir/ssh-add" <<'EOF'
+#!/bin/sh
+case "${SSH_AUTH_SOCK:-}" in
+  *good-agent.sock) exit 0 ;;
+  *) exit 2 ;;
+esac
+EOF
+    chmod +x -- "$bin_dir/ssh-add"
+
+    export PATH="$bin_dir:$PATH"
+    export SSH_AUTH_SOCK="$dead_sock"
+    export CODEX_SSH_AUTH_SOCK_GLOB="$PWD/.tmp/*-agent.sock"
+    export CLAUDE_SSH_AUTH_SOCK_GLOB="$PWD/.tmp/*-agent.sock"
+    export COPILOT_SSH_AUTH_SOCK_GLOB="$PWD/.tmp/*-agent.sock"
+
+    _codex_tmux_sync_environment "codex-existing"
+    _claude_tmux_sync_environment "claude-existing"
+    _copilot_tmux_sync_environment "copilot-existing"
+
+    PATH="$old_path"
+    tmux_calls="${(F)TMUX_CALLS}"
+    assert_contains "$tmux_calls" "set-environment -g SSH_AUTH_SOCK $good_sock" "tmux sync recovers live global SSH_AUTH_SOCK"
+    assert_contains "$tmux_calls" "set-environment -t codex-existing SSH_AUTH_SOCK $good_sock" "codex sync recovers live session SSH_AUTH_SOCK"
+    assert_contains "$tmux_calls" "set-environment -t claude-existing SSH_AUTH_SOCK $good_sock" "claude sync recovers live session SSH_AUTH_SOCK"
+    assert_contains "$tmux_calls" "set-environment -t copilot-existing SSH_AUTH_SOCK $good_sock" "copilot sync recovers live session SSH_AUTH_SOCK"
+    assert_not_contains "$tmux_calls" "set-environment -g SSH_AUTH_SOCK $dead_sock" "tmux sync does not propagate stale SSH_AUTH_SOCK"
 }
 
 test_codex_tmux_persists_and_resets_title() {
@@ -683,6 +727,7 @@ test_tmux_update_environment_local_file
 test_codex_tmux_sync_environment_refreshes_display_vars
 test_codex_tmux_sync_environment_refreshes_forwarded_display
 test_tmux_sync_environment_skips_dead_ssh_agent_socket
+test_tmux_sync_environment_recovers_live_ssh_agent_socket
 test_codex_tmux_persists_and_resets_title
 test_codex_attach_restores_and_resets_title
 test_codex_attach_switches_client_inside_tmux

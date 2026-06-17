@@ -78,6 +78,43 @@ _claude_ssh_auth_sock_valid() {
     esac
 }
 
+_claude_find_ssh_auth_sock() {
+    emulate -L zsh -o extendedglob
+    local current="${SSH_AUTH_SOCK:-}"
+    local fallback=""
+    local pattern="${CLAUDE_SSH_AUTH_SOCK_GLOB:-/tmp/ssh-*/agent.*}"
+    local sock ssh_add_status
+    local -a sockets
+
+    if _claude_ssh_auth_sock_valid "$current"; then
+        print -r -- "$current"
+        return 0
+    fi
+
+    sockets=(${~pattern}(N))
+    for sock in "${sockets[@]}"; do
+        [[ "$sock" == "$current" ]] && continue
+        [[ -S "$sock" ]] || continue
+        SSH_AUTH_SOCK="$sock" command ssh-add -l >/dev/null 2>&1
+        ssh_add_status=$?
+        case "$ssh_add_status" in
+            0)
+                print -r -- "$sock"
+                return 0
+                ;;
+            1)
+                [[ -z "$fallback" ]] && fallback="$sock"
+                ;;
+        esac
+    done
+
+    if [[ -n "$fallback" ]]; then
+        print -r -- "$fallback"
+        return 0
+    fi
+    return 1
+}
+
 _claude_tmux_sync_environment() {
     local -a tmux_cmd
     local tmux_socket="${CLAUDE_TMUX_SOCKET:-claude}"
@@ -102,9 +139,8 @@ _claude_tmux_sync_environment() {
         if [[ "$name" == "XAUTHORITY" && ! -r "$value" ]]; then
             continue
         fi
-        if [[ "$name" == "SSH_AUTH_SOCK" ]] \
-            && ! _claude_ssh_auth_sock_valid "$value"; then
-            continue
+        if [[ "$name" == "SSH_AUTH_SOCK" ]]; then
+            value="$(_claude_find_ssh_auth_sock)" || continue
         fi
         "${tmux_cmd[@]}" set-environment -g "$name" "$value" >/dev/null 2>&1 || true
         if [[ -n "$target" ]]; then
